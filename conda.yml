@@ -1,0 +1,21 @@
+channels:
+  - intel
+  - defaults
+dependencies:
+  - intel::pytorch=1.12.0
+  - intel::torchvision
+  - intel::intel-openmp=2022.1.0
+  - intel::mkl=2022.1.0
+  - intel::numpy=1.21
+  - numba
+  - scikit-learn
+  - scikit-image
+  - scipy
+  - pandas
+  - h5py
+  - pip:
+    - pytorch_lightning>=1.6.4
+    - matplotlib
+    - seaborn
+    - tqdm
+    - pytest
