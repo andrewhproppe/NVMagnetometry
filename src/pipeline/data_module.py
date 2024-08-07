@@ -13,7 +13,54 @@ from src.pipeline.transforms import (
     input_transform_pipeline,
     target_transform_pipeline,
 )
-from src.utils import paths
+from src.utils import paths, get_system_and_backend
+get_system_and_backend()
+
+def log_scale(x: torch.Tensor, eps=1e-6) -> torch.Tensor:
+    """
+    Applies log scaling to a 1D tensor.
+
+    Args:
+        x (torch.Tensor): A 1D tensor with shape (sequence_length,).
+
+    Returns:
+        torch.Tensor: A log-scaled tensor with the same shape as the input.
+    """
+    # Ensure numerical stability
+    x_shifted = x - x.min()
+    x_shifted += eps
+
+    # Log transformation
+    x_logged = torch.log(x_shifted)
+
+    # Subtract minimum and normalize
+    x_logged -= x_logged.min()
+    x_logged /= x_logged.max()
+
+    return x_logged
+
+def log_scale_batch(batch: torch.Tensor, eps=1e-6) -> torch.Tensor:
+    """
+    Applies log scaling to a batch of 1D tensors.
+
+    Args:
+        batch (torch.Tensor): A batch of 1D tensors with shape (batch_size, sequence_length).
+
+    Returns:
+        torch.Tensor: A batch of log-scaled tensors with the same shape as the input.
+    """
+    # Ensure numerical stability
+    batch_shifted = batch - batch.min(dim=1, keepdim=True)[0]
+    batch_shifted += eps
+
+    # Log transformation
+    batch_logged = torch.log(batch_shifted)
+
+    # Subtract minimum and normalize
+    batch_logged -= batch_logged.min(dim=1, keepdim=True)[0]
+    batch_logged /= batch_logged.max(dim=1, keepdim=True)[0]
+
+    return batch_logged
 
 
 class MagnetometryDataset(Dataset):
@@ -68,12 +115,15 @@ class MagnetometryDataset(Dataset):
         self._filepath = filepath
         self.rng = np.random.default_rng(seed)
         self.norm = False
+        self.B_max = 2
+        self.log_scale = False
+        self.concat_log = False
 
         for k, v in kwargs.items():
             setattr(self, k, v)
 
         self.input_transforms = input_transform_pipeline(self.norm)
-        self.target_transforms = target_transform_pipeline(self.norm)
+        self.target_transforms = target_transform_pipeline(norm=False)
 
     @property
     def filepath(self) -> str:
@@ -170,6 +220,16 @@ class MagnetometryDataset(Dataset):
 
         x = self.input_transforms(x)
         y = self.target_transforms(y)
+
+        x = x[:-1]
+
+        if self.log_scale:
+            x = log_scale(x)
+
+        if self.concat_log:
+            x = torch.cat((x, log_scale(x)))
+
+        y = y / self.B_max
 
         return x, y
 
@@ -357,18 +417,47 @@ if __name__ == "__main__":
     get_system_and_backend()
 
     dm = DataModule(
-        "trainset_20240728_n20.h5",
-        batch_size=10,
+        "n5000_0_to_10_snr100.h5",
+        batch_size=256,
         num_workers=4,
         pin_memory=True,
         split_type="random",
-        norm=False
+        norm=False,
+        B_max=10.0,
+        # log_scale=True,
+        concat_log=True
     )
 
     dm.setup()
 
     X, Y = next(iter(dm.train_dataloader()))
 
-    # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-    # ax[0].plot(X[3].numpy())
-    # add_colorbar(ax[1])
+
+    plt.figure()
+    plt.plot(X[0, :])
+
+    for i in range(0, 10):
+        x  = X[i, :]
+        x -= x.min()
+        x /= x.max()
+        # x = np.log(x)
+        plt.plot(x, label = f'A {Y[i]}')
+
+    plt.plot(x)
+    #
+    #
+    # q = x.clone()
+    # q -= q.min()
+    # q += 1e-6
+    # q = torch.log(q)
+    # q -= q.min()
+    # q /= q.max()
+    #
+    #
+    # plt.plot(q)
+    #
+    # import torch
+    #
+    # Q = log_scale_batch(X)
+    #
+    # # plt.legend()

@@ -3,7 +3,7 @@ from typing import Tuple, Union, Optional
 from argparse import ArgumentParser
 from copy import deepcopy
 from itertools import chain
-from src.models.submodels import MLPStack, AttnResNet1d
+from src.models.submodels import MLPStack, AttnResNet1d, AttentionBlock
 
 import numpy as np
 import torch
@@ -13,11 +13,13 @@ from torch.nn import functional as F
 import pytorch_lightning as pl
 import wandb
 
-# mpl.use("Agg")  # this forces a non-X server backend
+import matplotlib
+matplotlib.use("Agg")  # this forces a non-X server backend
 from matplotlib import pyplot as plt
 
 from src.models.utils import BetaRateScheduler, format_time_sequence, init_rnn, init_fc_layers, get_conv_output_size, get_conv_output_shape, get_conv1d_flat_shape
-from src.visualization.visualize import plot_adj_matrix
+# from src.utils import get_system_and_backend
+# get_system_and_backend()
 
 """
 Notes on style
@@ -97,12 +99,13 @@ class BaseModel(pl.LightningModule):
         X, Y = batch
         pred_Y = self(X)
 
-        recon = self.metric(pred_Y, Y)  # pixel-wise recon loss
+        l1_loss = self.metric(pred_Y, Y.unsqueeze(-1))
+        mse_loss = F.mse_loss(pred_Y, Y.unsqueeze(-1))
 
-        loss = recon
+        loss = l1_loss + mse_loss
 
         log = ({
-            "recon": recon,
+            "loss": loss,
          })
 
         return loss, log, X, Y, pred_Y
@@ -161,7 +164,7 @@ class BaseModel(pl.LightningModule):
 
         elif self.hparams.lr_schedule == 'RLROP':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, patience=50, factor=0.5, verbose=False, min_lr=1e-5,
+                optimizer, patience=10, factor=0.5, verbose=False, min_lr=1e-10, eps=1e-12
                 # optimizer, patience=10, factor=0.5, verbose=True, # original params that worked okay
             )
 
@@ -189,23 +192,18 @@ class BaseModel(pl.LightningModule):
 
     # @plot_with_agg_backend
     def plot_training_results(self, X, Y, pred_Y):
-        X = X.cpu()
         Y = Y.cpu()
         pred_Y = pred_Y.cpu()
 
-        # Select one random batch index
-        idx = random.randint(0, X.size(0) - 1)
+        x = np.linspace(0, 1, 201)
+        y = x
 
-        # Plot the state vector (X), the true adj matrix (Y) and the predicted adj matrix (pred_Y)
-        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-        axs[0].plot(X[idx])
-        axs[0].set_title("State vector")
-        plot_adj_matrix(Y[idx], ax=axs[1])
-        axs[1].set_title("True adj matrix")
-        plot_adj_matrix(pred_Y[idx], ax=axs[2])
-        axs[2].set_title("Predicted adj matrix")
+        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+        ax.plot(Y.cpu(), pred_Y.cpu(), "o", ms=2)
+        ax.plot(x, y, "k--", lw=1.0)
+
         plt.tight_layout()
-        # plt.show()
+
         wandb.Image(plt)
         plt.close()
 
@@ -301,7 +299,7 @@ class MLP(BaseModel):
 
         self.decoder = nn.Identity()
 
-        # self._init_weights()
+        self._init_weights()
         self.save_hyperparameters()
 
 
@@ -384,6 +382,145 @@ class ConvMLP(BaseModel):
         X, _ = self.encode(X)
         X = self.recode(X)
         X = self.decode(X)
+        return X
+
+
+class AttnLSTM(BaseModel):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int,
+        output_size: int,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        bidirectional: bool = False,
+        attn_on: bool = False,
+        attn_layers: int = 1,
+        attn_heads: int = 4,
+        attn_norm: bool = False,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        self.bidirectional = bidirectional
+
+        self.attention = (
+            AttentionBlock(
+                output_size=input_size,
+                depth=attn_layers,
+                num_heads=attn_heads,
+                norm=attn_norm,
+            )
+            if attn_on else nn.Identity()
+        )
+
+        self.encoder = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            bidirectional=bidirectional
+        )
+
+        # Adjust the hidden size for bidirectional LSTM
+        if bidirectional:
+            hidden_size *= 2
+
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.decoder = nn.Linear(hidden_size, output_size)
+
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X = self.attention(X)
+        X, _ = self.encoder(X)
+        X = self.activation(X)  # Apply activation function to the last time step output
+        X = self.decode(X)  # Decode to the output
+        return X
+
+
+class VisionTransformer1D(BaseModel):
+
+    def __init__(
+        self,
+        input_size: int,
+        patch_size: int,
+        num_layers: int,
+        num_heads: int,
+        output_dim: int,
+        mlp_dim: int,
+        hidden_dim: int,
+        dropout: float = 0.1,
+        activation: str = "GeLU",
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.MSELoss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        self.patch_size = patch_size
+        self.hidden_dim = hidden_dim
+        self.num_patches = input_size // patch_size
+        self.linear_proj = nn.Linear(patch_size, hidden_dim)
+
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=hidden_dim,
+                nhead=num_heads,
+                dim_feedforward=mlp_dim,
+                dropout=dropout,
+                activation='gelu',
+                norm_first=True,
+            ),
+            num_layers=num_layers
+        )
+
+        self.decoder = nn.Linear(hidden_dim, output_dim)
+
+        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches + 1, hidden_dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_dim))
+        self.dropout = nn.Dropout(dropout)
+
+        self._init_weights()
+        self.save_hyperparameters()
+
+
+    def encode(self, X: torch.Tensor):
+        X = X.view(X.size(0), self.num_patches, self.patch_size)
+        X = self.linear_proj(X)
+
+        batch_size = X.size(0)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        X = torch.cat((cls_tokens, X), dim=1)
+        X += self.pos_embedding[:, :X.size(1), :]
+
+        return self.dropout(X)
+
+    def forward(self, X: torch.Tensor):
+        X = self.encode(X)
+        X = self.transformer(X)
+        X = X[:, 0]
+        X = self.decode(X)
+        X = F.sigmoid(X)
         return X
 
 

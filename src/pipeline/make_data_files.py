@@ -7,9 +7,20 @@ Created on Thu Jul 25 09:23:06 2024
 
 #==============================================================================
 import numpy as np
-import random
+import scipy.constants as cte
+
+from scipy.integrate import trapz
+from src.utils import get_system_and_backend, paths
+from tqdm import tqdm
+# ==============================================================================
+import numpy as np
 import scipy.constants as cte
 from scipy.integrate import trapz
+from tqdm import tqdm
+
+from src.utils import get_system_and_backend, paths
+
+get_system_and_backend()
  #0.1,0.2....1G in KL divergence
 #==============================================================================
 
@@ -17,19 +28,19 @@ Type = 'EnsembleNV'
 
 SNR = 100 #signal-to-noise ratio in dB / the minimum SNR would practicly be 20dB in this study.
 
-#determine the magnetic field strength randomly
-B_start = 0
-B_stop = 2
-step_sizes = [1, 0.1, 0.01, 1e-5]
-
-random_selections = []
-for step in step_sizes:
-    series = np.arange(B_start, B_stop + step, step)  
-    random_choice = random.choice(series)
-    data_random = [(step, random_choice)]
-    random_selections.append(data_random)
-B_matrix = np.concatenate(random_selections, axis = 0)
-B = B_matrix[:,1]
+# #determine the magnetic field strength randomly
+# B_start = 0
+# B_stop = 2
+# step_sizes = [1, 0.1, 0.01, 1e-5]
+#
+# random_selections = []
+# for step in step_sizes:
+#     series = np.arange(B_start, B_stop + step, step)
+#     random_choice = random.choice(series)
+#     data_random = [(step, random_choice)]
+#     random_selections.append(data_random)
+# B_matrix = np.concatenate(random_selections, axis = 0)
+# B = B_matrix[:,1]
 
 theta_B = np.pi/6.
 phi_B = np.pi/3.  
@@ -322,19 +333,26 @@ def awgn(signal, desired_snr):
     return noisy_signal
 
 if __name__ == "__main__":
-    #=========================== Calculation ======================================
-    for B_list in B:
-        I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B_list, theta_B, phi_B,  Linewidth)
-        I_time_noisy = awgn(I_time_clean, SNR)
+    ndata = 50000  # number of weight-vector pairs to generate
+    save = True
+    plot = False
+    B_low = 0
+    B_high = 10
 
-        #save data
-        title = "time(\mus) intensity(a.u.)"
+    # filename = f"trainset_20240728_n{ndata}_{B_low}_to_{B_high}.h5"
+
+    # Generate B_values randomly between 0 and 2
+    B_values = np.random.uniform(B_low, B_high, ndata).astype(np.float32)
+
+    for i in tqdm(range(0, ndata)):
+        I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B_values[i], theta_B, phi_B, Linewidth)
+        # I_time_noisy = awgn(I_time_clean, SNR)
 
         DATA = np.ones((len(Time), 2))
         DATA[:, 0] = Time
-        DATA[:, 1] = I_time_noisy
+        DATA[:, 1] = I_time_clean
 
-        #
-        # filename = f"../Data_analyzed/EnsembleNV_MWbroadband_signal100dB_time_domain_{B_list:.7f}G.dat"
-        # np.savetxt(filename, DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')
-
+        title = "time(\mus) intensity(a.u.)"
+        filename = f"clean/{B_values[i]:.7f}G.dat"
+        if save:
+            np.savetxt(paths.get("raw").joinpath(filename), DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')

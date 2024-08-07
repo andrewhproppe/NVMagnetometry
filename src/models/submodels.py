@@ -101,7 +101,7 @@ class AttentionBlock(nn.Module):
         )
         self.attention = nn.Sequential(nn.LazyLinear(output_size), nn.Softmax())
         self.transform_layers = MLPStack(
-            output_size, output_size, output_size, depth * 2, activation, norm=norm, residual=False, lazy=True
+            output_size, output_size, output_size, depth * 2, 0, activation, norm=norm, residual=False, lazy=True
         )
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:

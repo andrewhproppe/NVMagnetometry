@@ -12,6 +12,7 @@ paths = {
     "models": top.joinpath("models"),
     "notebooks": top.joinpath("notebooks"),
     "scripts": top.joinpath("scripts"),
+    "trained_models": top.joinpath("trained_models"),
 }
 
 

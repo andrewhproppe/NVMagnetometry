@@ -1,5 +1,5 @@
 
-from ..make_dataset import generate_gridded_spectra
+from ..make_data_files import generate_gridded_spectra
 
 
 def test_grid():

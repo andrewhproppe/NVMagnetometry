@@ -1,0 +1,79 @@
+#==============================================================================
+# ==============================================================================
+import numpy as np
+import os
+import random
+import h5py
+
+from tqdm import tqdm
+from src.utils import get_system_and_backend, paths
+from src.data.EnsembleNV_MWbroadband_addressing_time_domain import awgn
+from datetime import datetime
+from matplotlib import pyplot as plt
+
+
+get_system_and_backend()
+
+if __name__ == "__main__":
+    ndata = 5000  # number of weight-vector pairs to generate
+    save = True
+    plot = False
+    B_low = 0
+    B_high = 10
+
+    data_dir = paths.get("raw").joinpath("clean")
+    filenames = os.listdir(data_dir)
+
+    # snr = 100 # db
+    snr = 20 # db
+
+    # Get today's data
+    date = datetime.now().strftime("%Y%m%d")
+
+    header = {
+        "date": date,
+        "ndata": ndata,
+        "B_low": B_low,
+        "B_high": B_high,
+        "snr": snr,
+    }
+
+    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}.h5"
+    # h5_filename = "test.h5"
+
+    inputs = []
+    labels = []
+
+    for i in tqdm(range(0, ndata)):
+        idx = random.randint(0, len(filenames) - 1)
+        filename = filenames[idx]
+        B_value = float(filename.split("G.dat")[0])
+        data = np.loadtxt(data_dir.joinpath(filename))
+
+        # Add noise
+        data_noisy = awgn(data[:, 1], snr)
+
+        inputs.append(data_noisy)
+        labels.append(B_value)
+
+    time = data[:, 0]
+
+    if save:
+        with h5py.File(paths["datasets"].joinpath(h5_filename), "w") as f:
+            f.create_dataset("labels", data=labels)
+            f.create_dataset("inputs", data=inputs)
+            f.create_dataset("Time", data=time)
+            for key, value in header.items():
+                f.attrs[key] = value
+
+        print(f"Data saved to {h5_filename}")
+
+
+    # A function to inspect a .h5 file that prints the header attributes
+    def inspect_h5_file(h5_filename):
+        with h5py.File(paths["datasets"].joinpath(h5_filename), "r") as f:
+            print(f"Header attributes of {h5_filename}:")
+            for key, value in f.attrs.items():
+                print(f"{key}: {value}")
+
+    # inspect_h5_file(h5_filename)
