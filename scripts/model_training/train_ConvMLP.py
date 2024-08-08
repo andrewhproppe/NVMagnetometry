@@ -11,8 +11,8 @@ if __name__ == "__main__":
     seed_everything(42, workers=True)
 
     dm = DataModule(
-        # "trainset_20240731_n5000_0_to_10.h5",
-        "n5000_0_to_10_snr100.h5",
+        # "n5000_0_to_10_snr100.h5",
+        "n5000_0_to_10_snr100_long.h5",
         batch_size=256,
         num_workers=0,
         pin_memory=True,
@@ -22,17 +22,18 @@ if __name__ == "__main__":
     )
 
     model = ConvMLP(
-        input_size=201,
+        # input_size=201,
+        input_size=2000,
         channels=128,
         depth=5,
-        kernels=[3, 3, 3, 3, 3],
+        kernels=[5, 3, 3, 3, 3],
         downsample=16,
         MLP_hidden_size=128,
         MLP_output_size=1,
         MLP_depth=3,
         dropout=0.,
         norm=False,
-        lr=1e-3,
+        lr=1e-6,
         lr_schedule="RLROP",
         weight_decay=1e-5,
         activation="PReLU",

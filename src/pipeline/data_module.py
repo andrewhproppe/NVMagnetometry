@@ -221,8 +221,6 @@ class MagnetometryDataset(Dataset):
         x = self.input_transforms(x)
         y = self.target_transforms(y)
 
-        x = x[:-1]
-
         if self.log_scale:
             x = log_scale(x)
 

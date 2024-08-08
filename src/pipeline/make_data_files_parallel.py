@@ -1,27 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jul 25 09:23:06 2024
+Created on Wed Jul 24 20:47:23 2024
 
 @author: Ahmadiafsa
 """
-
 #==============================================================================
 import numpy as np
+import random
 import scipy.constants as cte
-
+import os
 from scipy.integrate import trapz
-from src.utils import get_system_and_backend, paths
+from multiprocessing import Pool, cpu_count
+from src.utils import paths, get_system_and_backend
 from tqdm import tqdm
-# ==============================================================================
-import numpy as np
-import scipy.constants as cte
-from scipy.integrate import trapz
-from tqdm import tqdm
-
-from src.utils import get_system_and_backend, paths
-
+from matplotlib import pyplot as plt
 get_system_and_backend()
- #0.1,0.2....1G in KL divergence
 #==============================================================================
 
 Type = 'EnsembleNV'
@@ -29,25 +22,29 @@ Type = 'EnsembleNV'
 SNR = 100 #signal-to-noise ratio in dB / the minimum SNR would practicly be 20dB in this study.
 time_start = 8.00
 time_stop = 12.00
-# #determine the magnetic field strength randomly
-# B_start = 0
-# B_stop = 2
-# step_sizes = [1, 0.1, 0.01, 1e-5]
-#
-# random_selections = []
-# for step in step_sizes:
-#     series = np.arange(B_start, B_stop + step, step)
-#     random_choice = random.choice(series)
-#     data_random = [(step, random_choice)]
-#     random_selections.append(data_random)
-# B_matrix = np.concatenate(random_selections, axis = 0)
-# B = B_matrix[:,1]
+
+#determine the magnetic field strength randomly
+B_start = 0
+B_stop = 2
+step_sizes = [1, 0.1, 0.01, 1e-5]
+
+random_selections = []
+for step in step_sizes:
+    series = np.arange(B_start, B_stop + step, step)  
+    random_choice = random.choice(series)
+    data_random = [(step, random_choice)]
+    random_selections.append(data_random)
+B_matrix = np.concatenate(random_selections, axis = 0)
+B = B_matrix[:,1]
+# print(B)
 
 theta_B = np.pi/6.
 phi_B = np.pi/3.  
 
 theta_MW = np.pi/4.
 phi_MW = np.pi/4.
+
+# raise RuntimeError
 
 #======================= Constants =========================================
 # NV fine and hyperfine constants (in MHz)
@@ -104,8 +101,8 @@ sigma = fwhm / 2 * np.sqrt(np.log(2))
 dt = 1 / (freq_f - freq_i) #time step (s)
 time_range = dt * len(MWfreq) #duration of time domain signal
 time = np.arange(0, time_range , dt) 
-# Time = time[(time >= 8) & (time <= 12)] #9.98-10.08
-Time = time[(time >= time_start) & (time <= time_stop)] #9.98-10.08
+# Time = time[(time >= 8) & (time <= 12)]
+Time = time[(time >= time_start) & (time <= time_stop)]
 
 #=========================== General functions ================================
 
@@ -311,8 +308,8 @@ def time_series_signal_NVensemble(MWfreq, thetaMW, phiMW, B0, thetaB, phiB,  Lin
     #F.F.T of the output field at L = length in the response of the liner chi
     E_L_time = np.fft.fftshift(np.fft.fft(E_L_omega))
     intensity_L_time = np.abs(E_L_time) ** 2 / max(E_0_time) ** 2
-    # filtered_intensity = intensity_L_time[(time >= 8) & (time <= 12)] #9.98-10.08 mus
-    filtered_intensity = intensity_L_time[(time >= time_start) & (time <= time_stop)] #9.98-10.08 mus
+    # filtered_intensity = intensity_L_time[(time >= 8) & (time <= 12)]
+    filtered_intensity = intensity_L_time[(time >= time_start) & (time <= time_stop)]
 
     return filtered_intensity
 
@@ -320,9 +317,9 @@ def time_series_signal_NVensemble(MWfreq, thetaMW, phiMW, B0, thetaB, phiB,  Lin
 
 def awgn(signal, desired_snr):
     """
-    Add Gaussian noise to the input signal to achieve the desired SNR level.
+    Add Gaussian to the input signal to achieve the desired SNR level.
     """
-    # np.random.seed(64)
+    #np.random.seed(64)
     
     signal_power = np.mean(np.abs(signal) ** 2)
     noise_power = signal_power / (10**(desired_snr / 10)) #in linear factor
@@ -333,27 +330,84 @@ def awgn(signal, desired_snr):
     
     return noisy_signal
 
+#=========================== Calculation ======================================
+
+def intensity_time_noisy(B):
+
+    I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B, theta_B, phi_B,  Linewidth)
+    # I_time_noisy = awgn(I_time_clean, SNR)
+
+    DATA = np.ones((len(Time), 2))
+    DATA[:, 0] = Time
+    DATA[:, 1] = I_time_clean
+
+    # # filename = f"../Data_analyzed/EnsembleNV_MWbroadband_signal100dB_time_domain_{B:.7f}G.dat"
+    # filename = f"EnsembleNV_MWbroadband_signal100dB_time_domain_{B:.7f}G.dat"
+    # np.savetxt(filename, DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')
+
+    title = "time(\mus) intensity(a.u.)"
+    filename = f"clean_full/{B:.7f}G.dat"
+    if save:
+        np.savetxt(paths.get("raw").joinpath(filename), DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')
+
+    return filename
+
+
+def parallel_intensity_time_noisy(B_values):
+    num_cores = cpu_count()
+    with Pool(num_cores) as pool:
+        filenames = pool.map(intensity_time_noisy, B_values)
+    return filenames
+
+#
+# def intensity_time_noisy(B):
+#     I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B, theta_B, phi_B, Linewidth)
+#     I_time_noisy = awgn(I_time_clean, SNR)
+#
+#     DATA = np.ones((len(Time), 2))
+#     DATA[:, 0] = Time
+#     DATA[:, 1] = I_time_noisy
+#
+#     return DATA
+#
+#
+# def parallel_intensity_time_noisy(B_values):
+#     num_cores = cpu_count()
+#     with Pool(num_cores) as pool:
+#         data_arrays = pool.map(intensity_time_noisy, B_values)
+#     return data_arrays
+
+
 if __name__ == "__main__":
-    ndata = 2  # number of weight-vector pairs to generate
-    save = False
+    ndata = 50000  # number of weight-vector pairs to generate
+    save = True
     plot = False
     B_low = 0
     B_high = 10
 
-    # filename = f"trainset_20240728_n{ndata}_{B_low}_to_{B_high}.h5"
-
-    # Generate B_values randomly between 0 and 2
+    # Generate B_values randomly between B_low and B_high
     B_values = np.random.uniform(B_low, B_high, ndata).astype(np.float32)
 
-    for i in tqdm(range(0, ndata)):
-        I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B_values[i], theta_B, phi_B, Linewidth)
-        # I_time_noisy = awgn(I_time_clean, SNR)
+    parallel_intensity_time_noisy(B_values)
 
-        DATA = np.ones((len(Time), 2))
-        DATA[:, 0] = Time
-        DATA[:, 1] = I_time_clean
+    if plot:
+        # Load a saved file to verify the data
+        path = paths.get("raw").joinpath("clean_full")
+        files = os.listdir(path)
 
-        title = "time(\mus) intensity(a.u.)"
-        filename = f"clean/{B_values[i]:.7f}G.dat"
-        if save:
-            np.savetxt(paths.get("raw").joinpath(filename), DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')
+        # Load first .dat file and plt
+        data = np.loadtxt(path.joinpath(files[0]))
+        plt.plot(data[:, 0], data[:, 1])
+
+    # for i in tqdm(range(0, ndata)):
+    #     I_time_clean = time_series_signal_NVensemble(MWfreq, theta_MW, phi_MW, B_values[i], theta_B, phi_B, Linewidth)
+    #     # I_time_noisy = awgn(I_time_clean, SNR)
+    #
+    #     DATA = np.ones((len(Time), 2))
+    #     DATA[:, 0] = Time
+    #     DATA[:, 1] = I_time_clean
+    #
+    #     title = "time(\mus) intensity(a.u.)"
+    #     filename = f"clean_full/{B_values[i]:.7f}G.dat"
+    #     if save:
+    #         np.savetxt(paths.get("raw").joinpath(filename), DATA, fmt='%.17g', delimiter='\t ', header=title, comments='#')

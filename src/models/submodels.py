@@ -71,6 +71,7 @@ class MLPStack(nn.Module):
         output = self.norm(output)
         return output
 
+
 ### Attention ###
 class AttentionBlock(nn.Module):
     def __init__(

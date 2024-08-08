@@ -164,7 +164,7 @@ class BaseModel(pl.LightningModule):
 
         elif self.hparams.lr_schedule == 'RLROP':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, patience=10, factor=0.5, verbose=False, min_lr=1e-10, eps=1e-12
+                optimizer, patience=15, factor=0.5, verbose=False, min_lr=1e-10, eps=1e-12
                 # optimizer, patience=10, factor=0.5, verbose=True, # original params that worked okay
             )
 
@@ -224,7 +224,7 @@ class BaseModel(pl.LightningModule):
 
     def _init_weights(self):
         for module in self.modules():
-            if isinstance(module, (nn.Conv2d, nn.Conv3d)):
+            if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
                 # Use He initialization for convolutional layers
                 nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
 
@@ -240,11 +240,27 @@ class BaseModel(pl.LightningModule):
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
 
-            elif isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.BatchNorm3d):
+            elif isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
                 # Initialize BatchNorm with small positive values to prevent division by zero
                 nn.init.normal_(module.weight, mean=1, std=0.02)
                 nn.init.constant_(module.bias, 0)
 
+            elif isinstance(module, (nn.LSTM, nn.GRU)):
+                # Initialize the weights for LSTM and GRU layers
+                for name, param in module.named_parameters():
+                    if 'weight_ih' in name:
+                        # Input-hidden weights: Xavier initialization
+                        nn.init.xavier_uniform_(param.data)
+                    elif 'weight_hh' in name:
+                        # Hidden-hidden weights: Orthogonal initialization
+                        nn.init.orthogonal_(param.data)
+                    elif 'bias' in name:
+                        # Set forget gate bias to 1 for LSTM (if applicable)
+                        nn.init.constant_(param.data, 0)
+                        if isinstance(module, nn.LSTM):
+                            # LSTM has 4 gates: the forget gate is the second gate (bias[hidden_size:2*hidden_size])
+                            hidden_size = param.data.shape[0] // 4
+                            param.data[hidden_size:2 * hidden_size] = 1.0
 
     def count_parameters(self):
         return sum(param.numel() for param in self.parameters())
@@ -301,7 +317,6 @@ class MLP(BaseModel):
 
         self._init_weights()
         self.save_hyperparameters()
-
 
 
 class ConvMLP(BaseModel):
@@ -385,6 +400,7 @@ class ConvMLP(BaseModel):
         return X
 
 
+
 class AttnLSTM(BaseModel):
     def __init__(
         self,
@@ -447,6 +463,145 @@ class AttnLSTM(BaseModel):
         X, _ = self.encoder(X)
         X = self.activation(X)  # Apply activation function to the last time step output
         X = self.decode(X)  # Decode to the output
+        return X
+
+
+class AttnGRU(BaseModel):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int,
+        output_size: int,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        bidirectional: bool = False,
+        attn_on: bool = False,
+        attn_layers: int = 1,
+        attn_heads: int = 4,
+        attn_norm: bool = False,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        self.bidirectional = bidirectional
+
+        self.attention = (
+            AttentionBlock(
+                output_size=input_size,
+                depth=attn_layers,
+                num_heads=attn_heads,
+                norm=attn_norm,
+            )
+            if attn_on else nn.Identity()
+        )
+
+        self.encoder = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            bidirectional=bidirectional
+        )
+
+        # Adjust the hidden size for bidirectional GRU
+        if bidirectional:
+            hidden_size *= 2
+
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.decoder = nn.Linear(hidden_size, output_size)
+
+        self._init_lazy((2, input_size))
+        self._init_weights()
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X = self.attention(X)
+        X, _ = self.encoder(X)
+        X = self.activation(X)  # Apply activation function to the last time step output
+        X = self.decoder(X)  # Decode to the output
+        return X
+
+
+class ConvGRU(BaseModel):
+    def __init__(
+        self,
+        input_size: int = 201,
+        hidden_size: int = 128,
+        num_layers: int = 3,
+        output_size: int = 1,
+        conv_channels: int = 32,
+        conv_depth: int = 4,
+        conv_kernels: list = [5, 3, 3, 3, 3],
+        conv_downsample: int = 16,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        bidirectional: bool = False,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        self.bidirectional = bidirectional
+
+        conv_channels = [1] + [conv_channels] * conv_depth if isinstance(conv_channels, int) else conv_channels
+        conv_strides = [2 if i < int(np.log2(conv_downsample)) else 1 for i in range(conv_depth)]
+
+        self.preprocess_conv = AttnResNet1d(
+            depth=conv_depth,
+            channels=conv_channels,
+            kernels=conv_kernels,
+            strides=conv_strides,
+            dropout=0.0,
+            norm=False,
+            residual=True,
+        )
+
+        self.encoder = nn.GRU(
+            input_size=conv_channels[-1],
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            bidirectional=bidirectional
+        )
+
+        self.flatten = nn.Flatten()
+
+        # Adjust the hidden size for bidirectional GRU
+        if bidirectional:
+            hidden_size *= 2
+
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.decoder = nn.LazyLinear(output_size)
+
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X, _ = self.preprocess_conv(X.unsqueeze(1))
+        X, _ = self.encoder(X.permute(0, 2, 1))
+        # z, h = self.encoder(X.permute(0, 2, 1))
+        X = self.flatten(X)
+        X = self.activation(X)  # Apply activation function to the last time step output
+        X = self.decoder(X)  # Decode to the output
         return X
 
 
@@ -2873,7 +3028,7 @@ models = {
 
 if __name__ == "__main__":
 
-    X = torch.randn(10, 702)
+    X = torch.randn(10, 201)
 
     # # Test MLP
     # model = MLP(
@@ -2890,22 +3045,32 @@ if __name__ == "__main__":
     # pred = model(X)
     # print(pred.shape)
 
-    # Test ConvMLP
-    model = ConvMLP(
-        input_size=702,
-        channels=4,
-        depth=3,
-        kernels=[5, 3, 3, 3, 3],
-        downsample=8,
-        MLP_hidden_size=64,
-        MLP_output_size=36,
-        MLP_depth=3,
-        dropout=0.1,
-        norm=True,
-        lr=1e-4,
-        weight_decay=1e-4,
-        activation="ReLU",
-    )
+    # # Test ConvMLP
+    # model = ConvMLP(
+    #     input_size=702,
+    #     channels=4,
+    #     depth=3,
+    #     kernels=[5, 3, 3, 3, 3],
+    #     downsample=8,
+    #     MLP_hidden_size=64,
+    #     MLP_output_size=36,
+    #     MLP_depth=3,
+    #     dropout=0.1,
+    #     norm=True,
+    #     lr=1e-4,
+    #     weight_decay=1e-4,
+    #     activation="ReLU",
+    # )
+
+    model = ConvGRU()
+
+    # model = ConvLSTMEncoder(
+    #     3,
+    #     128,
+    #     3,
+    #     64,
+    #     True
+    # )
 
     pred = model(X)
     print(pred.shape)

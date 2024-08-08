@@ -20,12 +20,13 @@ if __name__ == "__main__":
     plot = False
     B_low = 0
     B_high = 10
+    snr = 100 # db
+    downsampling = 2
 
-    data_dir = paths.get("raw").joinpath("clean")
+    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
+
+    data_dir = paths.get("raw").joinpath("clean_full")
     filenames = os.listdir(data_dir)
-
-    # snr = 100 # db
-    snr = 20 # db
 
     # Get today's data
     date = datetime.now().strftime("%Y%m%d")
@@ -38,8 +39,6 @@ if __name__ == "__main__":
         "snr": snr,
     }
 
-    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}.h5"
-    # h5_filename = "test.h5"
 
     inputs = []
     labels = []
@@ -49,6 +48,13 @@ if __name__ == "__main__":
         filename = filenames[idx]
         B_value = float(filename.split("G.dat")[0])
         data = np.loadtxt(data_dir.joinpath(filename))
+
+        # Downsample data
+        data = data[::downsampling]
+
+        # Remove last entry if odd
+        if len(data) % 2 != 0:
+            data = data[:-1]
 
         # Add noise
         data_noisy = awgn(data[:, 1], snr)

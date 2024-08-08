@@ -5,7 +5,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, StochasticWeightAveraging
 from src.pipeline.data_module import DataModule
-from src.models.base import AttnLSTM
+from src.models.base import AttnGRU, ConvGRU
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)
@@ -27,7 +27,9 @@ if __name__ == "__main__":
         # concat_log=concat_log,
     )
 
-    model = AttnLSTM(
+    # model = ConvGRU()
+
+    model = AttnGRU(
         # input_size=201 * (1 + concat_log),
         input_size=2000 * (1 + concat_log),
         hidden_size=128,
@@ -39,6 +41,9 @@ if __name__ == "__main__":
         weight_decay=1e-5,
         activation="LeakyReLU",
         bidirectional=True,
+        # attn_on=True,
+        # attn_layers=1,
+        # attn_heads=2,
         plot_interval=25,
         metric=nn.L1Loss,
         data_info=dm.header
@@ -47,8 +52,8 @@ if __name__ == "__main__":
     logger = WandbLogger(
         entity="aproppe",
         project="NVMagnetometry",
-        mode="offline",
-        # mode="online",
+        # mode="offline",
+        mode="online",
         # log_model=False,
     )
 
@@ -60,7 +65,7 @@ if __name__ == "__main__":
         logger=logger,
         # enable_checkpointing=False,
         accelerator="cuda" if torch.cuda.is_available() else "cpu",
-        devices=[0],
+        devices=[1],
         callbacks=[
             LearningRateMonitor(logging_interval="step"),
             StochasticWeightAveraging(swa_lrs=1e-8, swa_epoch_start=0.8)
