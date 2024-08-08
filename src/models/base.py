@@ -100,12 +100,14 @@ class BaseModel(pl.LightningModule):
         pred_Y = self(X)
 
         l1_loss = self.metric(pred_Y, Y.unsqueeze(-1))
-        mse_loss = F.mse_loss(pred_Y, Y.unsqueeze(-1))
+        # mse_loss = F.mse_loss(pred_Y, Y.unsqueeze(-1))
+        abs_loss = F.l1_loss(pred_Y, Y.unsqueeze(-1))
 
-        loss = l1_loss + mse_loss
+        loss = l1_loss #+ mse_loss
 
         log = ({
             "loss": loss,
+            "abs_loss": abs_loss,
          })
 
         return loss, log, X, Y, pred_Y
@@ -466,6 +468,69 @@ class AttnLSTM(BaseModel):
         return X
 
 
+
+class SelfAttention1D(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        embedding_size: int,
+        output_size: int,
+        num_heads: int = 4,
+        activation: str = "ReLU",
+        norm: bool = False,
+        dropout: float = 0.0
+    ):
+        super(SelfAttention1D, self).__init__()
+
+        # Linear layers for query, key, and value projections
+        self.query = nn.Linear(input_size, embedding_size)
+        self.key = nn.Linear(input_size, embedding_size)
+        self.value = nn.Linear(input_size, embedding_size)
+
+        # Multi-head self-attention mechanism
+        self.attention = nn.MultiheadAttention(embedding_size, num_heads, dropout=dropout, batch_first=True)
+
+        # Optional normalization
+        self.norm = nn.LayerNorm(embedding_size) if norm else nn.Identity()
+
+        # Activation function
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        # Output projection
+        self.output = nn.Linear(embedding_size, output_size)
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor):
+        # Project the input to query, key, and value
+        Q = self.query(x)
+        K = self.key(x)
+        V = self.value(x)
+
+        # Apply self-attention
+        attn_output, _ = self.attention(Q, K, V)
+
+        # Apply normalization, if enabled
+        attn_output = self.norm(attn_output)
+
+        # Apply activation function
+        attn_output = self.activation(attn_output)
+
+        # Apply dropout
+        attn_output = self.dropout(attn_output)
+
+        # Project to output size
+        output = self.output(attn_output)
+
+        return output
+
+
+
+
 class AttnGRU(BaseModel):
     def __init__(
         self,
@@ -477,9 +542,10 @@ class AttnGRU(BaseModel):
         activation: str = "ReLU",
         bidirectional: bool = False,
         attn_on: bool = False,
-        attn_layers: int = 1,
         attn_heads: int = 4,
+        attn_downsample: int = 2,
         attn_norm: bool = False,
+        decoder_depth: int = 3,
         lr: float = 1e-3,
         lr_schedule: str = None,
         weight_decay: float = 0.0,
@@ -490,16 +556,6 @@ class AttnGRU(BaseModel):
         super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
 
         self.bidirectional = bidirectional
-
-        self.attention = (
-            AttentionBlock(
-                output_size=input_size,
-                depth=attn_layers,
-                num_heads=attn_heads,
-                norm=attn_norm,
-            )
-            if attn_on else nn.Identity()
-        )
 
         self.encoder = nn.GRU(
             input_size=input_size,
@@ -512,23 +568,48 @@ class AttnGRU(BaseModel):
 
         # Adjust the hidden size for bidirectional GRU
         if bidirectional:
-            hidden_size *= 2
+            decoder_hidden_size = hidden_size * 2
+        else:
+            decoder_hidden_size = hidden_size
+
+        self.attention = (
+            SelfAttention1D(
+                input_size=decoder_hidden_size,
+                embedding_size=decoder_hidden_size//attn_downsample,
+                output_size=decoder_hidden_size,
+                num_heads=attn_heads,
+                activation="ReLU",
+                norm=attn_norm,
+                dropout=0.0
+            )
+            if attn_on else nn.Identity()
+        )
 
         try:
             self.activation = getattr(nn, activation)()
         except AttributeError:
             raise ValueError(f"Activation function '{activation}' is not valid.")
 
-        self.decoder = nn.Linear(hidden_size, output_size)
+        # self.decoder = nn.Linear(decoder_hidden_size, output_size)
 
-        self._init_lazy((2, input_size))
-        self._init_weights()
+        self.decoder = MLPStack(
+            input_size=decoder_hidden_size,
+            hidden_size=decoder_hidden_size,
+            output_size=output_size,
+            depth=decoder_depth,
+            norm=False,
+            residual=True,
+            lazy=False,
+        )
+
+        # self._init_lazy((2, input_size))
+        # self._init_weights()
         self.save_hyperparameters()
 
     def forward(self, X: torch.Tensor):
-        X = self.attention(X)
         X, _ = self.encoder(X)
         X = self.activation(X)  # Apply activation function to the last time step output
+        X = self.attention(X)
         X = self.decoder(X)  # Decode to the output
         return X
 
@@ -3062,15 +3143,29 @@ if __name__ == "__main__":
     #     activation="ReLU",
     # )
 
-    model = ConvGRU()
+    # model = ConvGRU()
 
-    # model = ConvLSTMEncoder(
-    #     3,
-    #     128,
-    #     3,
-    #     64,
-    #     True
-    # )
+    model = AttnGRU(
+        # input_size=201 * (1 + concat_log),
+        input_size=201,
+        # input_size=input_size,
+        hidden_size=128,
+        num_layers=3,
+        output_size=1,
+        dropout=0.,
+        lr=1e-3,
+        lr_schedule="RLROP",
+        weight_decay=1e-5,
+        activation="LeakyReLU",
+        bidirectional=True,
+        attn_on=False,
+        attn_heads=2,
+        attn_downsample=32,
+        decoder_depth=1,
+        plot_interval=25,
+        metric=nn.L1Loss,
+    )
 
     pred = model(X)
     print(pred.shape)
+    print(model.count_parameters())

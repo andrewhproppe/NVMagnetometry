@@ -20,7 +20,7 @@ if __name__ == "__main__":
     plot = False
     B_low = 0
     B_high = 10
-    snr = 100 # db
+    snr = 20 # db
     downsampling = 2
 
     h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"

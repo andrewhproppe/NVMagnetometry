@@ -118,6 +118,7 @@ class MagnetometryDataset(Dataset):
         self.B_max = 2
         self.log_scale = False
         self.concat_log = False
+        self.start_stop_idx = None
 
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -176,6 +177,18 @@ class MagnetometryDataset(Dataset):
         return h5py.File(self.filepath, "r")
 
     @property
+    def time_steps(self):
+        """
+        Returns the time steps stored on disk.
+
+        Returns
+        -------
+        np.ndarray
+            NumPy 1D array of time steps.
+        """
+        return self.data["Time"][:]
+
+    @property
     @lru_cache()
     def inputs(self) -> np.ndarray:
         """
@@ -226,6 +239,9 @@ class MagnetometryDataset(Dataset):
 
         if self.concat_log:
             x = torch.cat((x, log_scale(x)))
+
+        if self.start_stop_idx is not None:
+            x = x[self.start_stop_idx[0]:self.start_stop_idx[1]]
 
         y = y / self.B_max
 
@@ -411,37 +427,54 @@ if __name__ == "__main__":
     from matplotlib import pyplot as plt
     from src.utils import get_system_and_backend
     from src.visualization.visualize import plot_adj_matrix
-    from src.visualization.fig_utils import add_colorbar
+    from src.visualization.fig_utils import add_colorbar, find_nearest
     get_system_and_backend()
 
     dm = DataModule(
-        "n5000_0_to_10_snr100.h5",
+        # "n5000_0_to_10_snr100.h5",
+        "n5000_0_to_10_snr100_long.h5",
         batch_size=256,
         num_workers=4,
         pin_memory=True,
         split_type="random",
         norm=False,
         B_max=10.0,
+        start_stop_idx=(1005, 1575),
         # log_scale=True,
-        concat_log=True
+        # concat_log=True
     )
 
     dm.setup()
 
     X, Y = next(iter(dm.train_dataloader()))
 
+    t = dm.train_set.dataset.time_steps
 
-    plt.figure()
-    plt.plot(X[0, :])
+    # plt.figure()
+    # plt.plot(X[0, :])
+    #
+    # idx_start = 1005
+    # idx_end = 1575
+
+
+    idx_start = 0
+    idx_end = -1
 
     for i in range(0, 10):
         x  = X[i, :]
         x -= x.min()
         x /= x.max()
+        x += 1e-6
         # x = np.log(x)
-        plt.plot(x, label = f'A {Y[i]}')
+        plt.plot(
+            # t[idx_start:idx_end],
+            x[idx_start:idx_end],
+            label = f'A {Y[i]}'
+        )
 
-    plt.plot(x)
+
+    # plt.plot(x)
+
     #
     #
     # q = x.clone()

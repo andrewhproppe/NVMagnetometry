@@ -12,7 +12,9 @@ if __name__ == "__main__":
 
     dm = DataModule(
         # "n5000_0_to_10_snr100.h5",
+        # "n5000_0_to_10_snr20.h5",
         "n5000_0_to_10_snr100_long.h5",
+        # "n5000_0_to_10_snr20_long.h5",
         batch_size=256,
         num_workers=0,
         pin_memory=True,

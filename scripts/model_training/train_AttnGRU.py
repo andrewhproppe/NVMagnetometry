@@ -11,12 +11,14 @@ if __name__ == "__main__":
     seed_everything(42, workers=True)
 
     concat_log = False
+    # start_stop_idx = (1005, 1575)
+    # input_size = start_stop_idx[1] - start_stop_idx[0]
 
     dm = DataModule(
-        # "trainset_20240731_n5000_0_to_10.h5",
         # "n5000_0_to_10_snr100.h5",
         # "n5000_0_to_10_snr20.h5",
         "n5000_0_to_10_snr100_long.h5",
+        # "n5000_0_to_10_snr20_long.h5",
         batch_size=256,
         num_workers=0,
         pin_memory=True,
@@ -25,6 +27,7 @@ if __name__ == "__main__":
         B_max=10.0,
         # log_scale=True,
         # concat_log=concat_log,
+        # start_stop_idx=start_stop_idx
     )
 
     # model = ConvGRU()
@@ -32,6 +35,7 @@ if __name__ == "__main__":
     model = AttnGRU(
         # input_size=201 * (1 + concat_log),
         input_size=2000 * (1 + concat_log),
+        # input_size=input_size,
         hidden_size=128,
         num_layers=3,
         output_size=1,
@@ -42,8 +46,9 @@ if __name__ == "__main__":
         activation="LeakyReLU",
         bidirectional=True,
         # attn_on=True,
-        # attn_layers=1,
         # attn_heads=2,
+        # attn_downsample=1,
+        decoder_depth=5,
         plot_interval=25,
         metric=nn.L1Loss,
         data_info=dm.header
@@ -65,7 +70,7 @@ if __name__ == "__main__":
         logger=logger,
         # enable_checkpointing=False,
         accelerator="cuda" if torch.cuda.is_available() else "cpu",
-        devices=[1],
+        devices=[2],
         callbacks=[
             LearningRateMonitor(logging_interval="step"),
             StochasticWeightAveraging(swa_lrs=1e-8, swa_epoch_start=0.8)
