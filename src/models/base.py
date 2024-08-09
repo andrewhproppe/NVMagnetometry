@@ -3,7 +3,7 @@ from typing import Tuple, Union, Optional
 from argparse import ArgumentParser
 from copy import deepcopy
 from itertools import chain
-from src.models.submodels import MLPStack, AttnResNet1d, AttentionBlock
+from src.models.submodels import *
 
 import numpy as np
 import torch
@@ -402,7 +402,6 @@ class ConvMLP(BaseModel):
         return X
 
 
-
 class AttnLSTM(BaseModel):
     def __init__(
         self,
@@ -468,7 +467,6 @@ class AttnLSTM(BaseModel):
         return X
 
 
-
 class SelfAttention1D(nn.Module):
     def __init__(
         self,
@@ -527,8 +525,6 @@ class SelfAttention1D(nn.Module):
         output = self.output(attn_output)
 
         return output
-
-
 
 
 class AttnGRU(BaseModel):
@@ -610,6 +606,75 @@ class AttnGRU(BaseModel):
         X, _ = self.encoder(X)
         X = self.activation(X)  # Apply activation function to the last time step output
         X = self.attention(X)
+        X = self.decoder(X)  # Decode to the output
+        return X
+
+
+class GRU_NODE_MLP(BaseModel):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int,
+        output_size: int,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        bidirectional: bool = False,
+        decoder_depth: int = 3,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        self.bidirectional = bidirectional
+
+        self.encoder = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+            bidirectional=bidirectional
+        )
+
+        # Adjust the hidden size for bidirectional GRU
+        if bidirectional:
+            decoder_hidden_size = hidden_size * 2
+        else:
+            decoder_hidden_size = hidden_size
+
+        try:
+            self.activation = getattr(nn, activation)()
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.recoder = NODE(
+            input_size=decoder_hidden_size,
+        )
+
+        # self.decoder = nn.Linear(decoder_hidden_size, output_size)
+        self.decoder = MLPStack(
+            input_size=decoder_hidden_size,
+            hidden_size=decoder_hidden_size,
+            output_size=output_size,
+            depth=decoder_depth,
+            norm=False,
+            residual=True,
+            lazy=False,
+        )
+
+        # self._init_lazy((2, input_size))
+        # self._init_weights()
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X, _ = self.encoder(X)
+        _, X = self.recoder(X)
+        X = self.activation(X) # Apply activation function to the last time step output
         X = self.decoder(X)  # Decode to the output
         return X
 
@@ -760,6 +825,7 @@ class VisionTransformer1D(BaseModel):
         return X
 
 
+### Old models ###
 class LinearDiscriminator(nn.Module):
     def __init__(self, input_size):
         super().__init__()
@@ -3145,7 +3211,7 @@ if __name__ == "__main__":
 
     # model = ConvGRU()
 
-    model = AttnGRU(
+    model = GRU_NODE_MLP(
         # input_size=201 * (1 + concat_log),
         input_size=201,
         # input_size=input_size,
@@ -3158,9 +3224,6 @@ if __name__ == "__main__":
         weight_decay=1e-5,
         activation="LeakyReLU",
         bidirectional=True,
-        attn_on=False,
-        attn_heads=2,
-        attn_downsample=32,
         decoder_depth=1,
         plot_interval=25,
         metric=nn.L1Loss,

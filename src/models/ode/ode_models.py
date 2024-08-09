@@ -1,5 +1,9 @@
 from typing import Optional, Type
-from src.models.utils import init_fc_layers, get_conv_output_shape, get_conv_flat_shape
+from g2_pcfs.models.base import (
+    init_fc_layers,
+    get_conv_output_shape,
+    get_conv_flat_shape,
+)
 import numpy as np
 import torch
 from torch import nn
@@ -36,13 +40,14 @@ class MLPBlock(nn.Module):
         return output
 
 
-class MLPStack(nn.Module):
+class MLPStack_old(nn.Module):
     def __init__(
         self,
         out_dim: int,
         depth: int,
         activation: Optional[Type[nn.Module]] = None,
         output_activation: Optional[Type[nn.Module]] = None,
+        norm: Optional[Type[nn.Module]] = nn.LayerNorm,
         residual: bool = False,
     ) -> None:
         super().__init__()
@@ -65,12 +70,107 @@ class MLPStack(nn.Module):
         return output
 
 
+class MLPBlock(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        activation: Optional[Type[nn.Module]] = None,
+        norm: bool = True,
+        residual: bool = False,
+        lazy: bool = False,
+    ) -> None:
+        super().__init__()
+        linear = nn.LazyLinear(output_size) if lazy else nn.Linear(input_size, output_size)
+        norm_layer = nn.LazyBatchNorm1d(output_size) if lazy and norm else nn.BatchNorm1d(output_size) if norm else nn.Identity()
+        activation_layer = nn.Identity() if activation is None else activation()
+        self.model = nn.Sequential(linear, norm_layer, activation_layer)
+        self.residual = residual
+
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        output = self.model(data)
+        if self.residual:
+            output = output + data
+        return output
+
+
+class MLPStack(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        output_size: int,
+        depth: int,
+        activation: Optional[Type[nn.Module]] = nn.ReLU,
+        output_activation: Optional[Type[nn.Module]] = nn.ReLU,
+        norm: bool = True,
+        residual: bool = False,
+        residual_full: bool = False,
+        lazy: bool = False,
+    ) -> None:
+        super().__init__()
+        blocks = [MLPBlock(input_size, hidden_size, activation, norm=norm, residual=residual, lazy=lazy)]
+        for _ in range(depth - 1):
+            blocks.append(MLPBlock(hidden_size, hidden_size, activation, norm=norm, residual=residual, lazy=False))
+        blocks.append(MLPBlock(hidden_size, output_size, output_activation, norm=norm, residual=False, lazy=False))
+        self.model = nn.Sequential(*blocks)
+        self.residual_full = residual_full
+        self.norm = nn.BatchNorm1d(output_size) if norm else nn.Identity()
+
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        output = self.model(data)
+        if self.residual_full:
+            output = output + data
+        output = self.norm(output)
+        return output
+
+
+class MLP(nn.Module):
+    def __init__(
+        self,
+        input_size: int = 20,
+        output_size: int = None,
+        hidden_size: int = 250,
+        depth: int = 1,
+        dropout: float = 0.0,
+        activation: Optional[Type[nn.Module]] = nn.ReLU,
+        norm: Optional[Type[nn.Module]] = nn.LayerNorm,
+    ):
+        super(MLP, self).__init__()
+
+        output_size = input_size if output_size is None else output_size
+        activation = nn.Identity if activation is None else activation
+        norm = nn.Identity if norm is None else nn.LayerNorm
+        dropout_layer = nn.Identity() if dropout == 0.0 else nn.Dropout(dropout)
+
+        layers = []
+        layers.append(torch.nn.Linear(input_size, hidden_size))
+        layers.append(activation())
+        layers.append(norm(hidden_size))
+
+        for i in range(depth - 1):
+            layers.append(torch.nn.Linear(hidden_size, hidden_size))
+            layers.append(activation())
+            layers.append(norm(hidden_size))
+
+        layers.append(dropout_layer)  # ffff
+        layers.append(torch.nn.Linear(hidden_size, output_size))
+        layers.append(activation())
+        layers.append(norm(output_size))  # ffff
+
+        self.layers = torch.nn.Sequential(*layers)
+
+    def forward(self, x, *args):
+        return self.layers(x)
+
+
 class AttentionBlock(nn.Module):
     def __init__(
         self,
         output_size: int,
         depth: int,
         num_heads: int,
+        norm: bool = True,
         activation: Optional[Type[nn.Module]] = nn.ReLU,
     ) -> None:
         super().__init__()
@@ -79,9 +179,12 @@ class AttentionBlock(nn.Module):
         self.heads = nn.ModuleList(
             [
                 MLPStack(
-                    output_size,
-                    depth,
-                    activation,
+                    input_size=output_size,
+                    hidden_size=output_size,
+                    output_size=output_size,
+                    depth=depth,
+                    activation=activation,
+                    norm=norm,
                     output_activation=activation,
                     residual=True,
                 )
@@ -90,7 +193,7 @@ class AttentionBlock(nn.Module):
         )
         self.attention = nn.Sequential(nn.LazyLinear(output_size), nn.Softmax())
         self.transform_layers = MLPStack(
-            output_size, depth * 2, activation, residual=False
+            output_size, output_size, output_size, depth * 2, activation, norm=norm, residual=False, lazy=True
         )
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
@@ -724,46 +827,6 @@ class LSTMDecoder(nn.Module):
         output = self.fc(lstm_out)
         return output
 
-
-class MLP(nn.Module):
-    def __init__(
-        self,
-        input_size: int = 20,
-        output_size: int = None,
-        hidden_size: int = 250,
-        depth: int = 1,
-        dropout: float = 0.0,
-        activation: Optional[Type[nn.Module]] = nn.ReLU,
-        norm: Optional[Type[nn.Module]] = nn.LayerNorm,
-    ):
-        super(MLP, self).__init__()
-
-        output_size = input_size if output_size is None else output_size
-        activation = nn.Identity if activation is None else activation
-        norm = nn.Identity if norm is None else nn.LayerNorm
-        dropout_layer = nn.Identity() if dropout == 0.0 else nn.Dropout(dropout)
-
-        layers = []
-        layers.append(torch.nn.Linear(input_size, hidden_size))
-        layers.append(activation())
-        layers.append(norm(hidden_size))
-
-        for i in range(depth - 1):
-            layers.append(torch.nn.Linear(hidden_size, hidden_size))
-            layers.append(activation())
-            layers.append(norm(hidden_size))
-
-        layers.append(dropout_layer)  # ffff
-        layers.append(torch.nn.Linear(hidden_size, output_size))
-        layers.append(activation())
-        layers.append(norm(output_size))  # ffff
-
-        self.layers = torch.nn.Sequential(*layers)
-
-    def forward(self, x, *args):
-        return self.layers(x)
-
-
 class AugmentLatent(nn.Module):
     def __init__(
         self,
@@ -851,7 +914,7 @@ class ProjectLatent(nn.Module):
 
 
 if __name__ == "__main__":
-    from src.pipeline.image_data import ODEDataModule
+    from g2_pcfs.pipeline.image_data import ODEDataModule
     from torchdyn.models import NeuralODE
 
     # dm = ODEDataModule("pcfs_g2_2d_n300.h5", batch_size=32, add_noise=False)

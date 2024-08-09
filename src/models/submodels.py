@@ -1,5 +1,6 @@
 from typing import Optional, Type
 from src.models.utils import init_fc_layers, get_conv_output_shape, get_conv_flat_shape
+from torchdyn.models import NeuralODE
 import numpy as np
 import torch
 from torch import nn
@@ -427,6 +428,55 @@ class LSTMDecoder(nn.Module):
         return output
 
 
+### NODE ###
+
+class NODE(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int = 256,
+        output_size: int = None,
+        depth: int = 3,
+        activation: Optional[Type[nn.Module]] = nn.ReLU,
+        output_activation: Optional[Type[nn.Module]] = nn.ReLU,
+        norm: bool = False,
+        residual: bool = True,
+        residual_full: bool = False,
+        lazy: bool = False,
+        take_last: bool = True,
+        **ode_kwargs,
+    ) -> None:
+        super().__init__()
+
+        self.take_last = take_last
+
+        output_size = input_size if output_size is None else output_size
+
+        vector_field = MLPStack(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            output_size=output_size,
+            depth=depth,
+            activation=activation,
+            output_activation=output_activation,
+            norm=norm,
+            residual=residual,
+            residual_full=residual_full,
+            lazy=lazy,
+        )
+
+        self.ode = NeuralODE(vector_field, **ode_kwargs)
+
+    def forward(self, X: torch.Tensor, t: torch.Tensor=None) -> torch.Tensor:
+        if t is None:
+            t = torch.tensor([0, 1]).float().to(X.device)
+        t, z = self.ode(X, t)
+        z = z.permute(1, 0, 2)
+        if self.take_last:
+            z = z[:, -1, :]
+        return t, z
+
+
 ### MISC ###
 class AugmentLatent(nn.Module):
     def __init__(
@@ -534,16 +584,23 @@ if __name__ == "__main__":
     # )
     #
     # output, residuals = model(input_tensor.unsqueeze(1))
+    #
+    # model = MLPStack(
+    #     input_size=702,
+    #     hidden_size=256,
+    #     output_size=36,
+    #     depth=3,
+    #     activation=nn.ReLU,
+    #     output_activation=nn.ReLU,
+    #     norm=True,
+    #     residual=True,
+    # )
+    #
+    # output = model(input_tensor)
 
-    model = MLPStack(
-        input_size=702,
-        hidden_size=256,
-        output_size=36,
-        depth=3,
-        activation=nn.ReLU,
-        output_activation=nn.ReLU,
-        norm=True,
-        residual=True,
+    model = NODE(
+        input_size=201
     )
 
-    output = model(input_tensor)
+    input_tensor = torch.randn(10, 201)
+    t, z = model(input_tensor)
