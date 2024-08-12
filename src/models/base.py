@@ -651,10 +651,12 @@ class GRU_NODE_MLP(BaseModel):
             self.activation = getattr(nn, activation)()
         except AttributeError:
             raise ValueError(f"Activation function '{activation}' is not valid.")
+        #
+        # self.recoder = NODE(
+        #     input_size=decoder_hidden_size,
+        # )
 
-        self.recoder = NODE(
-            input_size=decoder_hidden_size,
-        )
+        self.recoder = nn.Identity()
 
         # self.decoder = nn.Linear(decoder_hidden_size, output_size)
         self.decoder = MLPStack(
@@ -673,9 +675,66 @@ class GRU_NODE_MLP(BaseModel):
 
     def forward(self, X: torch.Tensor):
         X, _ = self.encoder(X)
-        _, X = self.recoder(X)
+        X = self.recoder(X)
         X = self.activation(X) # Apply activation function to the last time step output
         X = self.decoder(X)  # Decode to the output
+        return X
+
+
+class NODE_MLP(BaseModel):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        output_size: int,
+        vf_depth: int = 3,
+        vf_hidden_size: int = 256,
+        decoder_depth: int = 3,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        norm: bool = False,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        try:
+            _activation = getattr(nn, activation)
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.encoder = nn.Linear(input_size, vf_hidden_size)
+
+        self.recoder = NODE(
+            input_size=vf_hidden_size,
+            hidden_size=vf_hidden_size,
+            depth=vf_depth,
+            norm=norm,
+            activation=_activation
+        )
+
+        self.decoder = MLPStack(
+            input_size=vf_hidden_size,
+            hidden_size=hidden_size,
+            output_size=output_size,
+            depth=decoder_depth,
+            dropout=0.0,
+            activation=_activation,
+            norm=False,
+            residual=True,
+            lazy=False,
+        )
+
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X = self.encoder(X)
+        X = self.recoder(X)
+        X = self.decoder(X)
         return X
 
 

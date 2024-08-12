@@ -429,7 +429,6 @@ class LSTMDecoder(nn.Module):
 
 
 ### NODE ###
-
 class NODE(nn.Module):
     def __init__(
         self,
@@ -452,7 +451,7 @@ class NODE(nn.Module):
 
         output_size = input_size if output_size is None else output_size
 
-        vector_field = MLPStack(
+        self.vector_field = MLPStack(
             input_size=input_size,
             hidden_size=hidden_size,
             output_size=output_size,
@@ -465,16 +464,24 @@ class NODE(nn.Module):
             lazy=lazy,
         )
 
-        self.ode = NeuralODE(vector_field, **ode_kwargs)
+        self.ode = NeuralODE(self.vector_field, **ode_kwargs)
 
-    def forward(self, X: torch.Tensor, t: torch.Tensor=None) -> torch.Tensor:
-        if t is None:
-            t = torch.tensor([0, 1]).float().to(X.device)
-        t, z = self.ode(X, t)
+    def forward(self, t_0: torch.Tensor, t_span: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if t_span is not None and isinstance(t_span, torch.Tensor):
+            self.t_span = t_span
+        _, z = self.ode(t_0)
         z = z.permute(1, 0, 2)
         if self.take_last:
             z = z[:, -1, :]
-        return t, z
+        return z
+
+    @property
+    def t_span(self) -> torch.Tensor:
+        return self.ode.t_span
+
+    @t_span.setter
+    def t_span(self, time_array: torch.Tensor) -> None:
+        self.ode.t_span = time_array
 
 
 ### MISC ###
@@ -602,5 +609,5 @@ if __name__ == "__main__":
         input_size=201
     )
 
-    input_tensor = torch.randn(10, 201)
-    t, z = model(input_tensor)
+    input_tensor = torch.randn(10, 201, requires_grad=True)
+    z = model(input_tensor)
