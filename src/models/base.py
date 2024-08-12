@@ -738,6 +738,67 @@ class NODE_MLP(BaseModel):
         return X
 
 
+class UNet_NODE_MLP(BaseModel):
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int = 128,
+        output_size: int = 1,
+        vf_hidden_size: int = 256,
+        vf_depth: int = 3,
+        vf_channels: int = [1, 16, 32, 64, 1],
+        vf_kernels: list = [5, 3, 3, 3, 3, 3],
+        vf_downsample: int = 16,
+        decoder_depth: int = 3,
+        dropout: float = 0.0,
+        activation: str = "ReLU",
+        norm: bool = False,
+        lr: float = 1e-3,
+        lr_schedule: str = None,
+        weight_decay: float = 0.0,
+        metric=nn.L1Loss,
+        plot_interval: int = 1000,
+        data_info: dict = None
+    ) -> None:
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+
+        try:
+            _activation = getattr(nn, activation)
+        except AttributeError:
+            raise ValueError(f"Activation function '{activation}' is not valid.")
+
+        self.encoder = nn.Linear(input_size, vf_hidden_size)
+
+        self.recoder = UNetNODE(
+            depth=vf_depth,
+            channels=vf_channels,
+            kernels=vf_kernels,
+            downsample=vf_downsample,
+            norm=norm,
+            activation=_activation
+        )
+
+        self.decoder = MLPStack(
+            input_size=vf_hidden_size,
+            hidden_size=hidden_size,
+            output_size=output_size,
+            depth=decoder_depth,
+            dropout=dropout,
+            activation=_activation,
+            norm=norm,
+            residual=True,
+            lazy=False,
+        )
+
+        self.save_hyperparameters()
+
+    def forward(self, X: torch.Tensor):
+        X = self.encoder(X)
+        X = self.recoder(X)
+        X = self.decoder(X)
+        return X
+
+
 class ConvGRU(BaseModel):
     def __init__(
         self,
@@ -3234,7 +3295,7 @@ models = {
 
 if __name__ == "__main__":
 
-    X = torch.randn(10, 201)
+    X = torch.randn(10, 2000)
 
     # # Test MLP
     # model = MLP(
@@ -3270,22 +3331,8 @@ if __name__ == "__main__":
 
     # model = ConvGRU()
 
-    model = GRU_NODE_MLP(
-        # input_size=201 * (1 + concat_log),
-        input_size=201,
-        # input_size=input_size,
-        hidden_size=128,
-        num_layers=3,
-        output_size=1,
-        dropout=0.,
-        lr=1e-3,
-        lr_schedule="RLROP",
-        weight_decay=1e-5,
-        activation="LeakyReLU",
-        bidirectional=True,
-        decoder_depth=1,
-        plot_interval=25,
-        metric=nn.L1Loss,
+    model = UNet_NODE_MLP(
+        input_size=2000
     )
 
     pred = model(X)

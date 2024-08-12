@@ -431,15 +431,15 @@ if __name__ == "__main__":
     get_system_and_backend()
 
     dm = DataModule(
-        # "n5000_0_to_10_snr100.h5",
-        "n5000_0_to_10_snr100_long.h5",
+        "n5000_0_to_10_snr100.h5",
+        # "n5000_0_to_10_snr100_long.h5",
         batch_size=256,
         num_workers=4,
         pin_memory=True,
         split_type="random",
         norm=False,
         B_max=10.0,
-        start_stop_idx=(1005, 1575),
+        # start_stop_idx=(1005, 1575),
         # log_scale=True,
         # concat_log=True
     )
@@ -460,18 +460,21 @@ if __name__ == "__main__":
     idx_start = 0
     idx_end = -1
 
-    for i in range(0, 10):
+    for i in range(0, 5):
         x  = X[i, :]
         x -= x.min()
         x /= x.max()
         x += 1e-6
-        # x = np.log(x)
+        x = np.log(x)
+        x -= x.min()
+        x /= x.max()
         plt.plot(
-            # t[idx_start:idx_end],
+            t[idx_start:idx_end],
             x[idx_start:idx_end],
-            label = f'A {Y[i]}'
+            label = f'B = {Y[i] * 10}'
         )
 
+    plt.legend()
 
     # plt.plot(x)
 
