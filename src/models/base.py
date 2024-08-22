@@ -69,6 +69,7 @@ class BaseModel(pl.LightningModule):
         metric=nn.MSELoss,
         plot_interval: int = 1000,
         lr_schedule: str = None,
+        lr_patience: int = 20,
     ) -> None:
         super().__init__()
         self.encoder = None
@@ -140,17 +141,13 @@ class BaseModel(pl.LightningModule):
         )
 
         if self.hparams.lr_schedule == 'Cyclic':
-            num_cycles = 1
-            max_steps = 15000
+            num_cycles = 3
+            max_steps = 25000
             step_size = max_steps // 2 // num_cycles
 
             scheduler = torch.optim.lr_scheduler.CyclicLR(
-                optimizer, base_lr=1e-4, max_lr=1e-2, cycle_momentum=False, step_size_up=7500, step_size_down=7500, mode="triangular2"
-                # optimizer, base_lr=1e-4, max_lr=1e-2, cycle_momentum=False, step_size_up=5000, step_size_down=5000, mode="triangular2"
-                # optimizer, base_lr=1e-4, max_lr=1e-2, cycle_momentum=False, step_size_up=step_size, step_size_down=step_size, mode="triangular2"
+                optimizer, base_lr=1e-7, max_lr=1e-3, cycle_momentum=False, step_size_up=step_size, step_size_down=step_size, mode="triangular2"
             )
-            scheduler._scale_fn_custom = scheduler._scale_fn_ref()
-            scheduler._scale_fn_ref = None
 
             lr_scheduler = {
                 "scheduler": scheduler,
@@ -166,7 +163,7 @@ class BaseModel(pl.LightningModule):
 
         elif self.hparams.lr_schedule == 'RLROP':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, patience=15, factor=0.5, verbose=False, min_lr=1e-10, eps=1e-12
+                optimizer, patience=self.hparams.lr_patience, factor=0.5, verbose=False, min_lr=1e-10, eps=1e-12
                 # optimizer, patience=10, factor=0.5, verbose=True, # original params that worked okay
             )
 
@@ -695,12 +692,13 @@ class NODE_MLP(BaseModel):
         norm: bool = False,
         lr: float = 1e-3,
         lr_schedule: str = None,
+        lr_patience: int = 25,
         weight_decay: float = 0.0,
         metric=nn.L1Loss,
         plot_interval: int = 1000,
         data_info: dict = None
     ) -> None:
-        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule)
+        super().__init__(lr, weight_decay, metric, plot_interval, lr_schedule, lr_patience)
 
         try:
             _activation = getattr(nn, activation)
@@ -746,7 +744,7 @@ class UNet_NODE_MLP(BaseModel):
         output_size: int = 1,
         vf_hidden_size: int = 256,
         vf_depth: int = 3,
-        vf_channels: int = [1, 16, 32, 64, 1],
+        vf_channels: int = 32,
         vf_kernels: list = [5, 3, 3, 3, 3, 3],
         vf_downsample: int = 16,
         decoder_depth: int = 3,

@@ -228,6 +228,7 @@ class MagnetometryDataset(Dataset):
         Dict[str, torch.Tensor]
             Transformed input (psi_post) and target (beta_weight) tensors.
         """
+
         x = self.inputs[index]
         y = self.labels[index]
 
@@ -318,6 +319,7 @@ class DataModule(pl.LightningDataModule):
         persistent_workers: bool = False,
         split_type: str = "fixed",
         val_size: float = 0.1,
+        test_size: float = 0.1,
         env: str = 'local', # Add env parameter
         **kwargs
     ):
@@ -338,6 +340,7 @@ class DataModule(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers
         self.val_size = val_size
+        self.test_size = test_size
         self.split_type = split_type
         self.data_kwargs = kwargs
 
@@ -373,16 +376,18 @@ class DataModule(pl.LightningDataModule):
         full_dataset = MagnetometryDataset(self.h5_path, self.seed, **self.data_kwargs)
 
         ntotal = int(len(full_dataset))
-        ntrain = int(ntotal * (1 - self.val_size))
-        nval = ntotal - ntrain
+        ntrain = int(ntotal * (1 - self.val_size - self.test_size))
+        nval   = int(ntotal * self.val_size)
+        ntest  = int(ntotal * self.test_size)
 
         if self.split_type == "fixed":
             self.train_set = Subset(full_dataset, range(0, ntrain))
-            self.val_set = Subset(full_dataset, range(ntrain, ntotal))
+            self.val_set = Subset(full_dataset, range(ntrain, ntrain + nval))
+            self.test_set = Subset(full_dataset, range(ntrain + nval, ntrain + nval + ntest))
         elif self.split_type == "random":
-            self.train_set, self.val_set = random_split(
+            self.train_set, self.val_set, self.test_set = random_split(
                 full_dataset,
-                [ntrain, nval],
+                [ntrain, nval, ntest],
             )
 
     def train_dataloader(self) -> DataLoader:
@@ -422,6 +427,24 @@ class DataModule(pl.LightningDataModule):
             drop_last=True,
         )
 
+    def test_dataloader(self) -> DataLoader:
+        """
+        Returns the DataLoader for the test set.
+
+        Returns
+        -------
+        DataLoader
+            DataLoader for the test set.
+        """
+        return DataLoader(
+            self.test_set,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
+            drop_last=True,
+        )
+
 
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
@@ -431,22 +454,22 @@ if __name__ == "__main__":
     get_system_and_backend()
 
     dm = DataModule(
-        "n5000_0_to_10_snr100.h5",
-        # "n5000_0_to_10_snr100_long.h5",
+        # "n5000_0_to_10_snr100.h5",
+        "n5000_0_to_10_snr100_long.h5",
         batch_size=256,
         num_workers=4,
         pin_memory=True,
         split_type="random",
         norm=False,
         B_max=10.0,
-        # start_stop_idx=(1005, 1575),
+        start_stop_idx=(700, 1500),
         # log_scale=True,
         # concat_log=True
     )
 
     dm.setup()
 
-    X, Y = next(iter(dm.train_dataloader()))
+    X, Y = next(iter(dm.test_dataloader()))
 
     t = dm.train_set.dataset.time_steps
 
@@ -455,7 +478,6 @@ if __name__ == "__main__":
     #
     # idx_start = 1005
     # idx_end = 1575
-
 
     idx_start = 0
     idx_end = -1
@@ -469,7 +491,7 @@ if __name__ == "__main__":
         x -= x.min()
         x /= x.max()
         plt.plot(
-            t[idx_start:idx_end],
+            # t[idx_start:idx_end],
             x[idx_start:idx_end],
             label = f'B = {Y[i] * 10}'
         )

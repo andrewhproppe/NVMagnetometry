@@ -1,9 +1,41 @@
 from functools import wraps
 
+import pytorch_lightning as pl
 import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+
+
+class LossThresholdEarlyStopping(pl.callbacks.Callback):
+    def __init__(self, monitor="val_loss", threshold=0.5, patience=10):
+        """
+        Args:
+            monitor (str): The metric to monitor (e.g., "val_loss").
+            threshold (float): The loss threshold. Training will stop if loss stays above this.
+            patience (int): The number of epochs to wait before stopping if the loss doesn't decrease.
+        """
+        super().__init__()
+        self.monitor = monitor
+        self.threshold = threshold
+        self.patience = patience
+        self.counter = 0
+
+    def on_validation_end(self, trainer, pl_module):
+        # Get the current value of the monitored metric
+        current_value = trainer.callback_metrics.get(self.monitor)
+
+        # Check if the monitored value is above the threshold
+        if current_value is not None and current_value >= self.threshold:
+            self.counter += 1
+        else:
+            self.counter = 0  # Reset counter if the metric improves
+
+        # Stop training if the patience has been exceeded
+        if self.counter >= self.patience:
+            print(f"Early stopping triggered. {self.monitor} hasn't decreased below {self.threshold} for {self.patience} epochs.")
+            trainer.should_stop = True  # This stops training in PyTorch Lightning
 
 
 class BetaRateScheduler:

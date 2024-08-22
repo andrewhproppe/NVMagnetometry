@@ -18,8 +18,8 @@ if __name__ == "__main__":
 
     dm = DataModule(
         # "n5000_0_to_10_snr100.h5",
-        "n5000_0_to_10_snr20.h5",
-        # "n5000_0_to_10_snr100_long.h5",
+        # "n5000_0_to_10_snr20.h5",
+        "n5000_0_to_10_snr100_long.h5",
         # "n5000_0_to_10_snr20_long.h5",
         batch_size=256,
         num_workers=0,
@@ -37,7 +37,8 @@ if __name__ == "__main__":
         # checkpoint_path=paths.get("trained_models").joinpath("jumping-rain-68.ckpt"),
         # checkpoint_path=paths.get("trained_models").joinpath("legendary-silence-69.ckpt"),
         # checkpoint_path=paths.get("trained_models").joinpath("proud-hill-73.ckpt"),
-        checkpoint_path=paths.get("trained_models").joinpath("comfy-leaf-74.ckpt"),
+        # checkpoint_path=paths.get("trained_models").joinpath("comfy-leaf-74.ckpt"),
+        checkpoint_path=paths.get("trained_models").joinpath("20240820.ckpt"),
     ).eval()
 
     X = X.to(model.device)

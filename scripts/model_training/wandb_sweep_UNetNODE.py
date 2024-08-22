@@ -5,10 +5,9 @@ import os
 from torch import nn
 from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import LearningRateMonitor, StochasticWeightAveraging, ModelCheckpoint
+from pytorch_lightning.callbacks import LearningRateMonitor, StochasticWeightAveraging
 from src.pipeline.data_module import DataModule
-from src.models.base import NODE_MLP
-from src.models.utils import LossThresholdEarlyStopping
+from src.models.base import UNet_NODE_MLP
 
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
@@ -19,13 +18,16 @@ sweep_config = {
     "name": "sweep",
     "metric": {"goal": "minimize", "name": "val_loss"},
     "parameters": {
-        "decoder_depth": {"values": [2, 3, 4, 5]},
-        "hidden_size": {"values": [64, 128, 256, 512]},
-        "activation": {"values": ["SiLU", "PReLU", "LeakyReLU", "GELU"]},
-        "vf_depth": {"values": [4, 5, 6]},
-        "vf_hidden_size": {"values": [256, 512, 1024]},
-        "lr": {"values": [1e-3, 5e-4, 1e-4]},
-        "lr_patience": {"values": [50, 60, 70]},
+        "hidden_size": {"values": [32, 64, 128, 256, 512, 1024]},
+        "vf_hidden_size": {"values": [32, 64, 128, 256, 512, 1024]},
+        "vf_depth": {"values": [2, 3, 4, 5, 6]},
+        "vf_channels": {"values": [16, 32, 64, 128, 256]},
+        "vf_kernels": {"values": [[5, 3, 3, 3, 3, 3, 3], [7, 3, 3, 3, 3, 3, 3], [7, 5, 5, 5, 5, 5, 5]]},
+        "vf_downsample": {"values": [2, 4, 8, 16, 32, 64, 128]},
+        "decoder_depth": {"values": [2, 3, 4, 5, 6]},
+        "activation": {"values": ["ReLU", "SiLU", "PReLU", "LeakyReLU", "GELU"]},
+        # "dropout": {"values": [0.0, 0.1, 0.2]},
+        # "weight_decay": {"values": [1e-7, 1e-6, 1e-5, 1e-4]},
     },
 }
 
@@ -36,7 +38,7 @@ dm = DataModule(
     # "n5000_0_to_10_snr20.h5",
     "n5000_0_to_10_snr100_long.h5",
     # "n5000_0_to_10_snr20_long.h5",
-    batch_size=500,
+    batch_size=256,
     num_workers=0,
     pin_memory=True,
     split_type="fixed",
@@ -51,16 +53,13 @@ def train():
         input_size=2000,
         hidden_size=128,
         output_size=1,
-        decoder_depth=3,
-        vf_depth=3,
-        vf_hidden_size=128,
         dropout=0.,
-        lr=1e-3,
+        lr=1e-4,
         lr_schedule="RLROP",
-        lr_patience=60,
         weight_decay=1e-5,
         activation="LeakyReLU",
-        plot_interval=100,
+        decoder_depth=3,
+        plot_interval=25,
         data_info=dm.header
     )
 
@@ -76,34 +75,22 @@ def train():
     # Config is a variable that holds and saves hyperparameters and inputs
     config = wandb.config
 
-    model = NODE_MLP(**config)
+    model = UNet_NODE_MLP(**config)
 
-    logger = WandbLogger(
-        mode='online',
-        log_model="True",
-        # save_code="True"
-    )
-    #
-    # checkpoint_callback = ModelCheckpoint(
-    #     dirpath=os.path.join(wandb.run.dir, "checkpoints"),  # Save checkpoints in the W&B run directory
-    #     save_top_k=-1,  # Save all checkpoints (optional: adjust to save only the best N checkpoints)
-    #     every_n_epochs=10,  # Save a checkpoint every 10 epochs
-    #     filename="{epoch:02d}-{val_loss:.2f}",  # Filename format (optional)
-    #     save_weights_only=False,  # Save the entire model, not just weights
-    # )
+    logger = WandbLogger(log_model="False", save_code="False")
+
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     trainer = Trainer(
-        max_epochs=3500,
+        max_epochs=350,
         # max_steps=10000,
         logger=logger,
-        # enable_checkpointing=False,
+        enable_checkpointing=False,
         accelerator="cuda" if torch.cuda.is_available() else "cpu",
-        devices=[3],
+        devices=[2],
         gradient_clip_val=1.0,
         callbacks=[
-            LearningRateMonitor(logging_interval="step"),
-            LossThresholdEarlyStopping(monitor="val_loss", threshold=0.4, patience=20),
-            # checkpoint_callback
+            lr_monitor,
             # StochasticWeightAveraging(swa_lrs=1e-8, swa_epoch_start=0.9)
         ],
         deterministic=True,

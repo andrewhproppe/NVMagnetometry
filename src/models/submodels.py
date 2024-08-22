@@ -731,7 +731,7 @@ class UNetNODE(nn.Module):
         self,
         depth: int = 5,
         channels_in: int = 1,
-        channels: list = [1, 64, 128, 128, 64, 1],
+        channels: int = 32,
         kernels: list = [5, 3, 3, 3, 3, 3],
         downsample: int = 4,
         dropout: float = 0.0,
@@ -898,7 +898,9 @@ if __name__ == "__main__":
     # )
     #
     # output = model(input_tensor)
-    model = UNetNODE()
+    model = UNetNODE(
+        channels=64,
+    )
 
     #
     # model = UNet1d(

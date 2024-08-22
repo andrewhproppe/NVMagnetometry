@@ -19,7 +19,7 @@ if __name__ == "__main__":
         # "n5000_0_to_10_snr20.h5",
         "n5000_0_to_10_snr100_long.h5",
         # "n5000_0_to_10_snr20_long.h5",
-        batch_size=256,
+        batch_size=500,
         num_workers=0,
         pin_memory=True,
         split_type="fixed",
@@ -30,37 +30,18 @@ if __name__ == "__main__":
         # start_stop_idx=start_stop_idx
     )
 
-    # model = AttnGRU(
-    #     # input_size=201 * (1 + concat_log),
-    #     input_size=2000 * (1 + concat_log),
-    #     # input_size=input_size,
-    #     hidden_size=128,
-    #     num_layers=3,
-    #     output_size=1,
-    #     dropout=0.,
-    #     lr=1e-3,
-    #     lr_schedule="RLROP",
-    #     weight_decay=1e-5,
-    #     activation="LeakyReLU",
-    #     bidirectional=True,
-    #     decoder_depth=3,
-    #     plot_interval=25,
-    #     metric=nn.L1Loss,
-    #     data_info=dm.header
-    # )
-
     model = NODE_MLP(
         # input_size=201,
         input_size=2000,
         # input_size=input_size,
-        hidden_size=128,
+        hidden_size=512,
         vf_depth=5,
         vf_hidden_size=512,
         output_size=1,
         dropout=0.,
         lr=1e-3,
         lr_schedule="RLROP",
-        lr_patience=50,
+        lr_patience=60,
         # lr_schedule="Cyclic",
         weight_decay=1e-5,
         activation="PReLU",
