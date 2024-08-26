@@ -17,11 +17,11 @@ if __name__ == "__main__":
     B_max = 10
 
     dm = DataModule(
-        # "n5000_0_to_10_snr100.h5",
+        "n5000_0_to_10_snr100.h5",
         # "n5000_0_to_10_snr20.h5",
-        "n5000_0_to_10_snr100_long.h5",
+        # "n5000_0_to_10_snr100_long.h5",
         # "n5000_0_to_10_snr20_long.h5",
-        batch_size=256,
+        batch_size=500,
         num_workers=0,
         pin_memory=True,
         split_type="fixed",
@@ -31,14 +31,12 @@ if __name__ == "__main__":
         # concat_log=concat_log,
     )
     dm.setup()
-    X, Y = next(iter(dm.val_dataloader()))
+    X, Y = next(iter(dm.test_dataloader()))
 
     model = NODE_MLP.load_from_checkpoint(
-        # checkpoint_path=paths.get("trained_models").joinpath("jumping-rain-68.ckpt"),
-        # checkpoint_path=paths.get("trained_models").joinpath("legendary-silence-69.ckpt"),
-        # checkpoint_path=paths.get("trained_models").joinpath("proud-hill-73.ckpt"),
-        # checkpoint_path=paths.get("trained_models").joinpath("comfy-leaf-74.ckpt"),
-        checkpoint_path=paths.get("trained_models").joinpath("20240820.ckpt"),
+        # checkpoint_path=paths.get("trained_models").joinpath("dulcet-sweep-4.ckpt"),
+        checkpoint_path=paths.get("trained_models").joinpath("twilight-sweep-29.ckpt"),
+        # checkpoint_path=paths.get("trained_models").joinpath("serene-sweep-1.ckpt"),
     ).eval()
 
     X = X.to(model.device)

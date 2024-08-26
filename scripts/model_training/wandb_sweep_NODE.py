@@ -32,9 +32,9 @@ sweep_config = {
 seed_everything(42, workers=True)
 
 dm = DataModule(
-    # "n5000_0_to_10_snr100.h5",
+    "n5000_0_to_10_snr100.h5",
     # "n5000_0_to_10_snr20.h5",
-    "n5000_0_to_10_snr100_long.h5",
+    # "n5000_0_to_10_snr100_long.h5",
     # "n5000_0_to_10_snr20_long.h5",
     batch_size=500,
     num_workers=0,
@@ -48,7 +48,8 @@ dm = DataModule(
 def train():
     # Default hyperparameters
     config_defaults = dict(
-        input_size=2000,
+        input_size=201,
+        # input_size=2000,
         hidden_size=128,
         output_size=1,
         decoder_depth=3,

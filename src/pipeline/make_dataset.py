@@ -15,17 +15,19 @@ from matplotlib import pyplot as plt
 get_system_and_backend()
 
 if __name__ == "__main__":
-    ndata = 5000  # number of weight-vector pairs to generate
+    ndata = 20000  # number of weight-vector pairs to generate
     save = True
     plot = False
     B_low = 0
     B_high = 10
-    snr = 20 # db
-    downsampling = 2
+    snr = 100 # db
+    downsampling = 1
 
-    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
+    # h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
+    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}.h5"
 
-    data_dir = paths.get("raw").joinpath("clean_full")
+    # data_dir = paths.get("raw").joinpath("clean_full")
+    data_dir = paths.get("raw").joinpath("clean")
     filenames = os.listdir(data_dir)
 
     # Get today's data
@@ -49,12 +51,16 @@ if __name__ == "__main__":
         B_value = float(filename.split("G.dat")[0])
         data = np.loadtxt(data_dir.joinpath(filename))
 
+        if len(data) != 201:
+            print(f"Data length is {len(data)}")
+            continue
+
         # Downsample data
         data = data[::downsampling]
 
-        # Remove last entry if odd
-        if len(data) % 2 != 0:
-            data = data[:-1]
+        # # Remove last entry if odd
+        # if len(data) % 2 != 0:
+        #     data = data[:-1]
 
         # Add noise
         data_noisy = awgn(data[:, 1], snr)
@@ -63,6 +69,7 @@ if __name__ == "__main__":
         labels.append(B_value)
 
     time = data[:, 0]
+
 
     if save:
         with h5py.File(paths["datasets"].joinpath(h5_filename), "w") as f:
