@@ -19,7 +19,7 @@ if __name__ == "__main__":
     B_low = 0
     B_high = 10
     snr = 100 # db
-    downsampling = 2
+    downsampling = 1
 
     # h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
     h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
