@@ -15,7 +15,6 @@ paths = {
     "trained_models": top.joinpath("trained_models"),
 }
 
-
 def get_system_and_backend():
     if platform.system() == "Linux":
-        matplotlib.use("QtAgg")
+        matplotlib.use("Qt5Agg")

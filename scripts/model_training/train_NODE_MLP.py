@@ -16,11 +16,7 @@ if __name__ == "__main__":
     # input_size = start_stop_idx[1] - start_stop_idx[0]
 
     dm = DataModule(
-        # "n5000_0_to_10_snr100.h5",
-        "n20000_0_to_10_snr100.h5",
-        # "n5000_0_to_10_snr20.h5",
-        # "n5000_0_to_10_snr100_long.h5",
-        # "n5000_0_to_10_snr20_long.h5",
+        "n20000_0_to_10_snr100_long.h5",
         batch_size=500,
         num_workers=0,
         pin_memory=True,
@@ -33,8 +29,8 @@ if __name__ == "__main__":
     )
 
     model = NODE_MLP(
-        input_size=201,
-        # input_size=2000,
+        # input_size=201,
+        input_size=2001,
         # input_size=input_size,
         hidden_size=64,
         vf_depth=5,
@@ -51,7 +47,6 @@ if __name__ == "__main__":
         metric=nn.L1Loss,
         data_info=dm.header
     )
-
 
     # checkpoint_path = paths.get("trained_models").joinpath("twilight-sweep-29.ckpt")
     # model = NODE_MLP.load_from_checkpoint(
@@ -89,7 +84,7 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         max_epochs=5000,
-        # max_steps=50000,
+        # max_steps=70000,
         logger=logger,
         # enable_checkpointing=False,
         accelerator="cuda" if torch.cuda.is_available() else "cpu",

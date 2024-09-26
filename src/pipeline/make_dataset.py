@@ -9,10 +9,8 @@ from tqdm import tqdm
 from src.utils import get_system_and_backend, paths
 from src.data.EnsembleNV_MWbroadband_addressing_time_domain import awgn
 from datetime import datetime
-from matplotlib import pyplot as plt
-
-
 get_system_and_backend()
+from matplotlib import pyplot as plt
 
 if __name__ == "__main__":
     ndata = 20000  # number of weight-vector pairs to generate
@@ -21,13 +19,13 @@ if __name__ == "__main__":
     B_low = 0
     B_high = 10
     snr = 100 # db
-    downsampling = 1
+    downsampling = 2
 
     # h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
-    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}.h5"
+    h5_filename = f"n{ndata}_{B_low}_to_{B_high}_snr{snr}_long.h5"
 
-    # data_dir = paths.get("raw").joinpath("clean_full")
-    data_dir = paths.get("raw").joinpath("clean")
+    data_dir = paths.get("raw").joinpath("clean_full")
+    # data_dir = paths.get("raw").joinpath("clean")
     filenames = os.listdir(data_dir)
 
     # Get today's data
@@ -51,9 +49,9 @@ if __name__ == "__main__":
         B_value = float(filename.split("G.dat")[0])
         data = np.loadtxt(data_dir.joinpath(filename))
 
-        if len(data) != 201:
-            print(f"Data length is {len(data)}")
-            continue
+        # if len(data) != 201:
+        #     print(f"Data length is {len(data)}")
+        #     continue
 
         # Downsample data
         data = data[::downsampling]
@@ -80,7 +78,6 @@ if __name__ == "__main__":
                 f.attrs[key] = value
 
         print(f"Data saved to {h5_filename}")
-
 
     # A function to inspect a .h5 file that prints the header attributes
     def inspect_h5_file(h5_filename):

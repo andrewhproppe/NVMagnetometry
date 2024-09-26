@@ -118,6 +118,7 @@ class MagnetometryDataset(Dataset):
         self.B_max = 2
         self.log_scale = False
         self.concat_log = False
+        self.fourier = False
         self.start_stop_idx = None
 
         for k, v in kwargs.items():
@@ -240,6 +241,12 @@ class MagnetometryDataset(Dataset):
 
         if self.concat_log:
             x = torch.cat((x, log_scale(x)))
+
+        if self.fourier:
+            xfft = torch.fft.fft(x).real
+            xfft -= xfft.min()
+            xfft /= xfft.max()
+            x = torch.cat((x, torch.fft.fftshift(xfft)))
 
         if self.start_stop_idx is not None:
             x = x[self.start_stop_idx[0]:self.start_stop_idx[1]]
@@ -448,23 +455,22 @@ class DataModule(pl.LightningDataModule):
 
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
-    from src.utils import get_system_and_backend
+    # from src.utils import get_system_and_backend
     from src.visualization.visualize import plot_adj_matrix
     from src.visualization.fig_utils import add_colorbar, find_nearest
-    get_system_and_backend()
+    # get_system_and_backend()
+    import matplotlib
+    matplotlib.use('Qt5Agg')
 
     dm = DataModule(
-        # "n5000_0_to_10_snr100.h5",
-        "n5000_0_to_10_snr100_long.h5",
+        "n20000_0_to_10_snr100_long.h5",
         batch_size=256,
         num_workers=4,
         pin_memory=True,
         split_type="random",
         norm=False,
         B_max=10.0,
-        start_stop_idx=(700, 1500),
-        # log_scale=True,
-        # concat_log=True
+        # fourier=True
     )
 
     dm.setup()
@@ -484,12 +490,12 @@ if __name__ == "__main__":
 
     for i in range(0, 5):
         x  = X[i, :]
-        x -= x.min()
-        x /= x.max()
-        x += 1e-6
-        x = np.log(x)
-        x -= x.min()
-        x /= x.max()
+        # x -= x.min()
+        # x /= x.max()
+        # x += 1e-6
+        # x = np.log(x)
+        # x -= x.min()
+        # x /= x.max()
         plt.plot(
             # t[idx_start:idx_end],
             x[idx_start:idx_end],

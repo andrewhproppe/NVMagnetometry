@@ -1,15 +1,12 @@
 import torch
-import numpy as np
 
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor, StochasticWeightAveraging
+from pytorch_lightning import seed_everything
 from src.pipeline.data_module import DataModule
-from src.models.base import ConvMLP, MLP, AttnLSTM, AttnGRU, NODE_MLP
+from src.models.base import NODE_MLP
 from src.utils import paths, get_system_and_backend
-from matplotlib import pyplot as plt
 from src.visualization.fig_utils import *
 get_system_and_backend()
+from matplotlib import pyplot as plt
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)
@@ -17,10 +14,12 @@ if __name__ == "__main__":
     B_max = 10
 
     dm = DataModule(
+        # "n20000_0_to_10_snr20_long.h5",
+        # "n20000_0_to_10_snr50_long.h5",
+        # "n20000_0_to_10_snr100_long.h5",
+        # "n20000_0_to_10_snr20.h5",
+        # "n20000_0_to_10_snr50.h5",
         "n20000_0_to_10_snr100.h5",
-        # "n5000_0_to_10_snr20.h5",
-        # "n5000_0_to_10_snr100_long.h5",
-        # "n5000_0_to_10_snr20_long.h5",
         batch_size=500,
         num_workers=0,
         pin_memory=True,
@@ -33,10 +32,14 @@ if __name__ == "__main__":
     dm.setup()
     X, Y = next(iter(dm.test_dataloader()))
 
+
     model = NODE_MLP.load_from_checkpoint(
-        # checkpoint_path=paths.get("trained_models").joinpath("dulcet-sweep-4.ckpt"),
-        checkpoint_path=paths.get("trained_models").joinpath("twilight-sweep-29.ckpt"),
-        # checkpoint_path=paths.get("trained_models").joinpath("serene-sweep-1.ckpt"),
+        # checkpoint_path=paths.get("trained_models").joinpath("solar-elevator-119.ckpt"), # 20 dB, 4 us
+        # checkpoint_path=paths.get("trained_models").joinpath("warm-cloud-120.ckpt"), # 50 dB, 4 us
+        # checkpoint_path=paths.get("trained_models").joinpath("vibrant-blaze-122.ckpt"), # 100 dB, 4 us
+        # checkpoint_path=paths.get("trained_models").joinpath("true-eon-113.ckpt"), # 20 dB, 0.2 us
+        # checkpoint_path=paths.get("trained_models").joinpath("dandy-pine-115.ckpt"), # 50 dB, 0.2 us
+        checkpoint_path=paths.get("trained_models").joinpath("zesty-breeze-111.ckpt"), # 100 dB, 0.2 us
     ).eval()
 
     X = X.to(model.device)
